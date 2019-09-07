@@ -1,0 +1,121 @@
+---
+# tasks file for awx-centos7
+## Installation
+- name: Disable SELinux
+  lineinfile:
+    path: /etc/selinux/config
+    regexp: '^SELINUX='
+    line: 'SELINUX=disabled'
+
+- name: Put selinux into permissive mode for runtine
+  command: setenforce 0   
+
+- name: Disable firewalld
+  service:
+    name: firewalld
+    state: stopped
+    enabled: false
+
+- name: Activate repositories
+  yum:
+    name: "{{ item }}"
+    state: latest
+  loop:
+    - epel-release
+    - centos-release-scl
+    - centos-release-scl-rh
+
+- name: Install wget
+  yum:
+    name: wget
+    state: latest
+
+- name: Copy repositories
+  template:
+    src: "{{ item }}"
+    dest: "/etc/yum.repos.d/{{ item }}"
+    mode: 0644
+    owner: root
+    group: root
+  loop:
+    - rabbitmq.repo
+    - rabbitmq-erlang.repo
+
+- name: Download AWX repo
+  get_url:
+    url: https://copr.fedorainfracloud.org/coprs/mrmeee/ansible-awx/repo/epel-7/mrmeee-ansible-awx-epel-7.repo
+    dest: /etc/yum.repos.d/ansible-awx.repo
+
+- name: Install required packages
+  yum:
+    name:
+      - rabbitmq-server
+      - rh-git29
+      - rh-postgresql10
+      - memcached
+      - nginx
+      - rh-python36
+    state: present
+
+#- name: Install Python dependecies
+#  yum:
+#    name: "rh-python36*"
+#    disablerepo: "*"
+#    enablerepo: "copr:copr.fedorainfracloud.org:mrmeee:ansible-awx,base"
+#    exclude: "*-debuginfo"
+#This didnt work so adding below for package installation
+
+- name: Install Python dependecies
+  command: yum -y install --disablerepo='*' --enablerepo='copr:copr.fedorainfracloud.org:mrmeee:ansible-awx, base' -x *-debuginfo rh-python36*
+
+- name: Install AWX-RPM
+  yum:
+    name: ansible-awx
+    state: latest
+
+## Configuration
+- name: Initialize DB
+  command: scl enable rh-postgresql10 "postgresql-setup initdb"
+
+- name: Start services Postgresql Database, RabbitMQ
+  service:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop:
+    - rh-postgresql10-postgresql
+    - rabbitmq-server
+
+- name: Create Postgres user
+  command: scl enable rh-postgresql10 "su postgres -c \"createuser -S awx\""
+
+- name: Create Postgres DB
+  command: scl enable rh-postgresql10 "su postgres -c \"createdb -O awx awx\""
+
+- name: Import Database data
+  become: yes
+  become_user: awx
+  become_method: su
+  command: scl enable rh-python36 rh-postgresql10 rh-git29 "GIT_PYTHON_REFRESH=quiet awx-manage migrate"
+
+- name: Initial configuration of AWX
+  become: yes
+  become_user: awx
+  become_method: su
+  command: "{{ item }}"
+  loop:
+    - echo "from django.contrib.auth.models import User; User.objects.create_superuser('admin', 'root@localhost', 'password')" | scl enable rh-python36 rh-postgresql10 "GIT_PYTHON_REFRESH=quiet awx-manage shell"
+    - scl enable rh-python36 rh-postgresql10 rh-git29 "GIT_PYTHON_REFRESH=quiet awx-manage create_preload_data" # Optional Sample Configuration
+    - scl enable rh-python36 rh-postgresql10 rh-git29 "GIT_PYTHON_REFRESH=quiet awx-manage provision_instance --hostname=$(hostname)"
+    - scl enable rh-python36 rh-postgresql10 rh-git29 "GIT_PYTHON_REFRESH=quiet awx-manage register_queue --queuename=tower --hostnames=$(hostname)"
+
+- name: Configure NGINX as proxy
+  get_url:
+    url: https://raw.githubusercontent.com/MrMEEE/awx-build/master/nginx.conf
+    dest: /etc/nginx/nginx.conf
+
+- name: Start and enable AWX service
+  service:
+    name: awx
+    state: started
+    enabled: true

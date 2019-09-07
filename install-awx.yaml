@@ -1,0 +1,6 @@
+---
+- name: Install AWX Play
+  hosts: all
+  roles:
+    - role: awx-centos7
+      when: ansible_distribution == "CentOS" 
