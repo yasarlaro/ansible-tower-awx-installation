@@ -113,6 +113,7 @@
   get_url:
     url: https://raw.githubusercontent.com/MrMEEE/awx-build/master/nginx.conf
     dest: /etc/nginx/nginx.conf
+    force: yes
 
 - name: Start and enable AWX service
   service:
