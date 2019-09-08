@@ -75,7 +75,7 @@
 
 ## Configuration
 - name: Initialize DB
-  command: scl enable rh-postgresql10 "postgresql-setup initdb"
+  shell: scl enable rh-postgresql10 "postgresql-setup initdb"
 
 - name: Start services Postgresql Database, RabbitMQ
   service:
@@ -87,27 +87,24 @@
     - rabbitmq-server
 
 - name: Create Postgres user
-  command: scl enable rh-postgresql10 "su postgres -c \"createuser -S awx\""
+  shell: scl enable rh-postgresql10 "su postgres -c \"createuser -S awx\""
 
 - name: Create Postgres DB
-  command: scl enable rh-postgresql10 "su postgres -c \"createdb -O awx awx\""
+  shell: scl enable rh-postgresql10 "su postgres -c \"createdb -O awx awx\""
 
 - name: Import Database data
-  become: yes
+  become: true
   become_user: awx
-  become_method: su
-  command: scl enable rh-python36 rh-postgresql10 rh-git29 "GIT_PYTHON_REFRESH=quiet awx-manage migrate"
+  shell: scl enable rh-python36 rh-postgresql10 rh-git29 "GIT_PYTHON_REFRESH=quiet awx-manage migrate"
 
 - name: Initial configuration of AWX
-  become: yes
+  become: true
   become_user: awx
-  become_method: su
-  command: "{{ item }}"
-  loop:
-    - echo "from django.contrib.auth.models import User; User.objects.create_superuser('admin', 'root@localhost', 'password')" | scl enable rh-python36 rh-postgresql10 "GIT_PYTHON_REFRESH=quiet awx-manage shell"
-    - scl enable rh-python36 rh-postgresql10 rh-git29 "GIT_PYTHON_REFRESH=quiet awx-manage create_preload_data" # Optional Sample Configuration
-    - scl enable rh-python36 rh-postgresql10 rh-git29 "GIT_PYTHON_REFRESH=quiet awx-manage provision_instance --hostname=$(hostname)"
-    - scl enable rh-python36 rh-postgresql10 rh-git29 "GIT_PYTHON_REFRESH=quiet awx-manage register_queue --queuename=tower --hostnames=$(hostname)"
+  shell: |
+    echo "from django.contrib.auth.models import User; User.objects.create_superuser('admin', 'root@localhost', 'password')" | scl enable rh-python36 rh-postgresql10 "GIT_PYTHON_REFRESH=quiet awx-manage shell"
+    scl enable rh-python36 rh-postgresql10 rh-git29 "GIT_PYTHON_REFRESH=quiet awx-manage create_preload_data" # Optional Sample Configuration
+    scl enable rh-python36 rh-postgresql10 rh-git29 "GIT_PYTHON_REFRESH=quiet awx-manage provision_instance --hostname=$(hostname)"
+    scl enable rh-python36 rh-postgresql10 rh-git29 "GIT_PYTHON_REFRESH=quiet awx-manage register_queue --queuename=tower --hostnames=$(hostname)"
 
 - name: Configure NGINX as proxy
   get_url:
@@ -120,3 +117,7 @@
     name: awx
     state: started
     enabled: true
+
+- name: Print connection details
+  debug:
+    msg: "Installation is completed. Please connect to http://{{ ansible_default_ipv4.address }}:8052"
